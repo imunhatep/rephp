@@ -11,8 +11,7 @@
     ],
     "require": {
         "php": ">=5.5",
-        "react/react": "~0.4",
-        "imunhatep/php-pm": "@dev"
+        "react/react": "~0.4"
     },
     "require-dev": {
         "raulfraile/ladybug-bundle": "dev-master"
