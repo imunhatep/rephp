@@ -3,6 +3,7 @@ namespace Rephp\Socket;
 
 
 use Evenement\EventEmitterTrait;
+use React\Stream\Buffer;
 use React\Stream\Util;
 use React\Stream\WritableStreamInterface;
 use Rephp\LoopEvent\SchedulerLoopInterface;
@@ -19,11 +20,11 @@ class Socket implements StreamSocketInterface
 {
     use EventEmitterTrait;
 
-    public $bufferSize = 1500; //typical MTU size
+    public $bufferSize;
     protected $socket;
-    protected $readable = true;
-    protected $writable = true;
-    protected $closing = false;
+    protected $readable;
+    protected $writable;
+    protected $closing;
 
 
     protected $loop;
@@ -37,8 +38,13 @@ class Socket implements StreamSocketInterface
 
         $this->socket = $socket;
         $this->loop = $loop;
-        $this->buffer = new Buffer($this, $this->loop);
 
+        $this->bufferSize = 1500; //typical MTU size
+        $this->readable = true;
+        $this->writable = true;
+        $this->closing = false;
+
+        $this->buffer = new Buffer($this->socket, $this->loop);
         $this->buffer->on(
             'error',
             function ($error) {
@@ -144,7 +150,6 @@ class Socket implements StreamSocketInterface
             fclose($this->socket);
         }
     }
-
 
     /**
      * @param $data

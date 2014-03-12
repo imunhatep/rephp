@@ -3,6 +3,7 @@
 namespace Rephp\Server;
 
 use Evenement\EventEmitter;
+use React\Socket\ConnectionException;
 use React\Socket\ServerInterface;
 use Rephp\Exception\Exception;
 use Rephp\LoopEvent\SchedulerLoopInterface;
@@ -34,26 +35,24 @@ class Server extends EventEmitter implements ServerInterface
      * @param $port
      * @param string $host
      * @return resource
-     * @throws \Rephp\Exception\Exception
+     * @throws \React\Socket\ConnectionException
      */
-    function listen($port, $host = 'localhost')
+    function listen($port, $host = '127.0.0.1')
     {
-        $this->loop->add($this->createSocket($port, $host), 'Listen server');
+        $this->server = @stream_socket_server('tcp://' . $host . ':' . $port, $no, $str);
+        if (!$this->server) {
+            throw new ConnectionException("$str ($no)");
+        }
+
+        $this->loop->add($this->createServer(), 'Listen server');
     }
 
     /**
-     * @param $port
-     * @param $host
      * @return \Generator
      * @throws \Rephp\Exception\Exception
      */
-    function createSocket($port, $host)
+    protected function createServer()
     {
-        $this->server = stream_socket_server('tcp://' . $host . ':' . $port, $no, $str);
-        if (!$this->server) {
-            throw new Exception("$str ($no)");
-        }
-
         $server = new Socket($this->server, $this->loop);
         $server->block(false);
 
