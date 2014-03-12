@@ -12,7 +12,7 @@ The recommended way to install react is [through composer](http://getcomposer.or
 ```JSON
 {
     "repositories": [
-        { "type": "vcs", "url": "https://github.com/Imunhatep/reactphp.git" }
+        { "type": "vcs", "url": "http://github.com/Imunhatep/rephp" }
     ],
     "require": {
         "imunhatep/rephp": "@dev"
