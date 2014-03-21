@@ -15,7 +15,11 @@ use Rephp\Socket\StreamSocketInterface;
 
 class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 {
+<<<<<<< HEAD
     const STREAM_SELECT_TIMEOUT = 250000;
+=======
+    const STREAM_SELECT_TIMEOUT = 100000;
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
 
     private $nextTickQueue;
     private $futureTickQueue;
@@ -33,9 +37,15 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     protected $writeTasks;
     protected $writeResources;
 
+<<<<<<< HEAD
     protected $debugEnabled;
 
     function __construct($debug = 0)
+=======
+    protected $debugEnabled = false;
+
+    function __construct()
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
     {
         parent::__construct();
 
@@ -267,8 +277,10 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
      */
     function run()
     {
-        $this->running = true;
-        $this->add($this->poll(), 'Poll');
+        if(!$this->running){
+            $this->running = true;
+            $this->add($this->poll(), 'Poll');
+        }
 
         parent::run();
     }
@@ -288,7 +300,11 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     {
         $timeout = $poll = 0;
         while ($this->running) {
+<<<<<<< HEAD
             $this->debug("\n\n" . '--== POLL (N:' . $poll++ . ' Q: ' . count($this->queue) . ')==--');
+=======
+            $this->debug("\n\n".'--== POLL (N:'.$poll++.' Q: '.count($this->queue).')==--');
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
 
             yield $this->nextTickQueue->tick();
             yield $this->futureTickQueue->tick();
@@ -305,6 +321,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
                 //$timeout = ($scheduledAt - $this->timers->getTime()) * 1000000;
                 $timeout = 1000000;
             }
+<<<<<<< HEAD
             else {
                 //($this->debugEnabled === 1) and sleep(2);
                 $this->debug('NOTHING TO DO');
@@ -330,6 +347,23 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 //                    $this->debug("Dead resource: $rid", 3);
 //                }
 //            }
+=======
+            // The only possible event is stream activity, so wait forever ...
+            else if ($this->readResources or $this->writeResources) {
+
+                if ($this->queue->isEmpty()) {
+                    //sleep(2);
+                    $this->debug(MYNAME.' - NOTHING TO DO');
+
+                    $timeout = self::STREAM_SELECT_TIMEOUT;
+                }
+                else {
+                    $timeout = 0;
+                }
+            }
+
+            yield $this->doPoll($timeout);
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
         }
     }
 
@@ -345,7 +379,11 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
             return;
         }
 
+<<<<<<< HEAD
         $this->debug('Streams Read : ' . count($this->readResources) . '   Write: ' . count($this->writeResources), 2);
+=======
+        $this->debug('Streams Read : ' . count($this->readResources) . '   Write: ' . count($this->writeResources));
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
 
         //$r = $this->readResources; $w = $this->writeResources;
         //if(!stream_select($r, $w, $e = [], $timeout)){ return ; }
@@ -376,7 +414,11 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
             }
         }
 
+<<<<<<< HEAD
         $this->debug('--== END ==--' . "\n");
+=======
+        $this->debug('--== END ==--'."\n");
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
     }
 
     function selectStreams($timeout)
@@ -388,11 +430,19 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
         $w = $this->writeResources;
 
         // timeout / rounds
+<<<<<<< HEAD
         $this->lastTimeout = (int)($timeout / ceil($streamCount / $spr));
         do {
             $r = array_slice($this->readResources, $offset, $spr);
             stream_select($r, $w, $e = [], 0, $this->lastTimeout);
             $this->debug("Offset: $offset Timeout: $this->lastTimeout Found: " . count($r), 2);
+=======
+        $timeoutPerRound = (int) $timeout / ceil($streamCount / $spr);
+        do{
+            $r = array_slice($this->readResources, $offset, $spr);
+            stream_select($r, $w, $e = [], 0, $timeoutPerRound);
+            //$this->debug("Offset: $offset  found: ".count($r));
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
 
             $offset += $spr;
         } while (empty($r) and empty($w) and ($offset < $streamCount));
@@ -408,9 +458,15 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     protected function callableToGenerator($stream, callable $callable)
     {
         $closure = $callable;
+<<<<<<< HEAD
         if (is_array($callable)) {
             $loop = $this;
             $closure = function () use ($callable, $stream, $loop) {
+=======
+        if(is_array($callable)){
+            $loop = $this;
+            $closure = function() use ($callable, $stream, $loop) {
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
                 call_user_func($callable, $stream, $loop);
             };
         }
@@ -418,10 +474,16 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
         yield new SystemCall($closure);
     }
 
+<<<<<<< HEAD
     protected function debug($msg, $type = 1)
     {
         if ($this->debugEnabled and ($type >= $this->debugEnabled)) {
             error_log($msg);
         }
+=======
+    protected function debug($msg)
+    {
+        $this->debugEnabled and error_log($msg);
+>>>>>>> 50ed71d966622dd433c444f6d504107a7e1b927d
     }
 }
