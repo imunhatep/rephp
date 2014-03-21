@@ -62,11 +62,14 @@ class Scheduler
     {
         while (!$this->queue->isEmpty()) {
             $task = $this->queue->dequeue();
-            $return = $task->run();
 
-            if ($return instanceof SystemCall) {
-                $return($task, $this);
-                continue;
+            if(!$task->isKilled()){
+                $return = $task->run();
+
+                if ($return instanceof SystemCall) {
+                    $return($task, $this);
+                    continue;
+                }
             }
 
             if ($task->isFinished()) {

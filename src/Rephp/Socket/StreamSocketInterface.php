@@ -33,4 +33,6 @@ interface StreamSocketInterface extends ConnectionInterface
     public function getRaw();
 
     public function getId();
+
+    public function setTimeout($seconds);
 }

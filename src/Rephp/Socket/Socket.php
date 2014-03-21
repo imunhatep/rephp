@@ -3,6 +3,7 @@ namespace Rephp\Socket;
 
 
 use Evenement\EventEmitterTrait;
+use React\Stream\Buffer;
 use React\Stream\Util;
 use React\Stream\WritableStreamInterface;
 use Rephp\LoopEvent\SchedulerLoopInterface;
@@ -19,11 +20,11 @@ class Socket implements StreamSocketInterface
 {
     use EventEmitterTrait;
 
-    public $bufferSize = 1500; //typical MTU size
+    public $bufferSize;
     protected $socket;
-    protected $readable = true;
-    protected $writable = true;
-    protected $closing = false;
+    protected $readable;
+    protected $writable;
+    protected $closing;
 
 
     protected $loop;
@@ -37,8 +38,13 @@ class Socket implements StreamSocketInterface
 
         $this->socket = $socket;
         $this->loop = $loop;
-        $this->buffer = new Buffer($this, $this->loop);
 
+        $this->bufferSize = 1500; //typical MTU size
+        $this->readable = true;
+        $this->writable = true;
+        $this->closing = false;
+
+        $this->buffer = new Buffer($this->socket, $this->loop);
         $this->buffer->on(
             'error',
             function ($error) {
@@ -126,6 +132,7 @@ class Socket implements StreamSocketInterface
         while ($this->readable) {
             yield new SystemCall(function (Task $task, SchedulerLoopInterface $scheduler) {
                 $data = stream_socket_recvfrom($this->socket, $this->bufferSize);
+
                 if (feof($this->socket)) {
                     $this->end();
                 }
@@ -137,6 +144,12 @@ class Socket implements StreamSocketInterface
         }
     }
 
+    function setTimeout($seconds)
+    {
+        stream_set_timeout($this->socket, $seconds);
+    }
+
+
     function handleClose()
     {
         if (is_resource($this->socket)) {
@@ -144,7 +157,6 @@ class Socket implements StreamSocketInterface
             fclose($this->socket);
         }
     }
-
 
     /**
      * @param $data
@@ -160,39 +172,33 @@ class Socket implements StreamSocketInterface
 
     function close()
     {
-        if ($this->writable or $this->closing) {
-            $this->closing = false;
-
-            $this->readable = false;
-            $this->writable = false;
-
-            $this->emit('end', array($this));
-            $this->emit('close', array($this));
-            $this->loop->removeStream($this->socket);
-            $this->buffer->removeAllListeners();
-            $this->removeAllListeners();
-
-            $this->handleClose();
+        if (!$this->writable && !$this->closing) {
+            return;
         }
+
+        $this->closing = false;
+
+        $this->readable = false;
+        $this->writable = false;
+
+        $this->emit('end', array($this));
+        $this->emit('close', array($this));
+        $this->loop->removeStream($this->socket);
+        $this->buffer->removeAllListeners();
+        $this->removeAllListeners();
+
+        $this->handleClose();
     }
 
     function end($data = null)
     {
-        if ($this->writable) {
-            $this->closing = true;
+        $this->closing = true;
 
-            $this->readable = false;
-            $this->writable = false;
+        $this->readable = false;
+        $this->writable = false;
 
-            $this->buffer->on(
-                'close',
-                function () {
-                    $this->close();
-                }
-            );
-
-            $this->buffer->end($data);
-        }
+        $this->buffer->on( 'close', function () { $this->close(); } );
+        $this->buffer->end($data);
     }
 
     function pipe(WritableStreamInterface $dest, array $options = [])

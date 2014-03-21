@@ -17,10 +17,11 @@ class Buffer extends EventEmitter implements WritableStreamInterface
 {
 
     public $stream;
-    public $listening = false;
+    public $listening;
     public $softLimit = 2048;
+
     protected $socket;
-    private $writable = true;
+    private $writable;
     private $loop;
     private $data = '';
     private $lastError = array(
@@ -34,10 +35,12 @@ class Buffer extends EventEmitter implements WritableStreamInterface
     public function __construct(Socket $socket, LoopInterface $loop)
     {
         $this->socket = $socket;
-        $this->stream = $socket->getRaw();
-
         $this->loop = $loop;
 
+        $this->writable = true;
+        $this->listening = false;
+
+        $this->stream = $socket->getRaw();
         if (is_resource($this->stream)) {
             $this->meta = stream_get_meta_data($this->stream);
         }
@@ -50,18 +53,20 @@ class Buffer extends EventEmitter implements WritableStreamInterface
 
     public function write($data)
     {
-        if ($this->writable) {
-            $this->data .= $data;
-
-            if (!$this->listening) {
-                $this->listening = true;
-
-                $this->handleWrite();
-            }
-
-            $belowSoftLimit = strlen($this->data) < $this->softLimit;
-            return $belowSoftLimit;
+        if (!$this->writable) {
+            return;
         }
+
+        $this->data .= $data;
+
+        if (!$this->listening) {
+            $this->listening = true;
+
+            $this->loop->addWriteStream($this->stream, array($this, 'handleWrite'));
+        }
+
+        $belowSoftLimit = strlen($this->data) < $this->softLimit;
+        return $belowSoftLimit;
     }
 
     public function end($data = null)
@@ -96,9 +101,7 @@ class Buffer extends EventEmitter implements WritableStreamInterface
         }
         else{
             set_error_handler(array($this, 'errorHandler'));
-
             $sent = fwrite($this->stream, $this->data);
-
             restore_error_handler();
 
             if (false === $sent) {

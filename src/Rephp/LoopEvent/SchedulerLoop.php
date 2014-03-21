@@ -1,7 +1,6 @@
 <?php
 namespace Rephp\LoopEvent;
 
-
 use React\EventLoop\Tick\FutureTickQueue;
 use React\EventLoop\Tick\NextTickQueue;
 use React\EventLoop\Timer\Timer;
@@ -16,6 +15,8 @@ use Rephp\Socket\StreamSocketInterface;
 
 class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 {
+    const STREAM_SELECT_TIMEOUT = 250000;
+
     private $nextTickQueue;
     private $futureTickQueue;
     private $running;
@@ -32,9 +33,13 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     protected $writeTasks;
     protected $writeResources;
 
-    function __construct()
+    protected $debugEnabled;
+
+    function __construct($debug = 0)
     {
         parent::__construct();
+
+        $this->debugEnabled = $debug;
 
         $this->nextTickQueue = new NextTickQueue($this);
         $this->futureTickQueue = new FutureTickQueue($this);
@@ -45,6 +50,39 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 
         $this->writeTasks = [];
         $this->writeResources = [];
+
+        $this->lastTimeout = self::STREAM_SELECT_TIMEOUT;
+
+        $this->addPeriodicTimer(
+            10,
+            function () {
+                $this->debug("\n" .
+                    "Read count: " . count($this->readResources) . "\n" .
+                    "Write count: " . count($this->writeResources) . "\n" .
+                    "Queue count: " . count($this->queue) . "\n" .
+                    "Tasks count: " . count($this->tasks) . "\n" .
+                    "Last timeout: " . $this->lastTimeout . "\n" .
+                    "====================",
+                    3
+                );
+
+
+                foreach ($this->readResources as $res) {
+                    if (!is_resource($res) or feof($res)) {
+                        $this->removeStream($res);
+                        fclose($res);
+                    }
+                }
+
+                foreach ($this->writeResources as $res) {
+                    if (!is_resource($res) or feof($res)) {
+                        $this->removeStream($res);
+                        fclose($res);
+                    }
+                }
+
+            }
+        );
     }
 
     /**
@@ -52,7 +90,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
      */
     function addReadStream($stream, callable $listener)
     {
-        $task = new Task(++$this->sequence, $this->callableToGenerator($listener), 'readstream');
+        $task = new Task(++$this->sequence, $this->callableToGenerator($stream, $listener), 'readstream');
         $socket = new Socket($stream, $this);
         $socket->block(false);
 
@@ -64,7 +102,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
      */
     function addWriteStream($stream, callable $listener)
     {
-        $task = new Task(++$this->sequence, $this->callableToGenerator($listener));
+        $task = new Task(++$this->sequence, $this->callableToGenerator($stream, $listener));
         $socket = new Socket($stream, $this);
         $socket->block(false);
 
@@ -72,14 +110,15 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     }
 
     /**
-     * @param StreamSocketInterface         $socket
-     * @param \Rephp\Scheduler\Task   $task
+     * @param StreamSocketInterface $socket
+     * @param \Rephp\Scheduler\Task $task
      */
-    public function addReader(StreamSocketInterface $socket, Task $task)
+    function addReader(StreamSocketInterface $socket, Task $task)
     {
-        //echo '====== READ: ' . (int)$socket->getRaw() . ' Task(' . $task->getName() . ')' . "\n";
+        $this->debug('====== READ: ' . (int)$socket->getRaw() . ' Task(' . $task->getName() . ')');
 
         $resourceId = $socket->getId();
+
         if (!isset($this->readResources[$resourceId])) {
             $this->readTasks[$resourceId] = new \SplStack();
             $this->readResources[$resourceId] = $socket->getRaw();
@@ -89,12 +128,15 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     }
 
     /**
-     * @param StreamSocketInterface         $socket
-     * @param \Rephp\Scheduler\Task   $task
+     * @param StreamSocketInterface $socket
+     * @param \Rephp\Scheduler\Task $task
      */
-    public function addWriter(StreamSocketInterface $socket, Task $task)
+    function addWriter(StreamSocketInterface $socket, Task $task)
     {
+        $this->debug('====== WRITE: ' . (int)$socket->getRaw() . ' Task(' . $task->getName() . ')');
+
         $resourceId = $socket->getId();
+
         if (!isset($this->writeResources[$resourceId])) {
             $this->writeTasks[$resourceId] = new \SplStack($task);
             $this->writeResources[$resourceId] = $socket->getRaw();
@@ -110,8 +152,12 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     {
         $resourceId = (int)$stream;
 
-        if (isset($this->readResources[$resourceId])) {
-            unset($this->readTasks[$resourceId], $this->readResources[$resourceId]);
+        $this->debug('====== REM RE: ' . (int)$resourceId);
+
+        unset($this->readResources[$resourceId]);
+        if (isset($this->readTasks[$resourceId])) {
+            $this->killTaskStack($this->readTasks[$resourceId]);
+            unset($this->readTasks[$resourceId]);
         }
     }
 
@@ -121,9 +167,12 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     function removeWriteStream($stream)
     {
         $resourceId = (int)$stream;
+        $this->debug('====== REM WR: ' . (int)$resourceId);
 
-        if (isset($this->writeResources[$resourceId])) {
-            unset($this->writeTasks[$resourceId], $this->writeResources[$resourceId]);
+        unset($this->writeResources[$resourceId]);
+        if (isset($this->writeTasks[$resourceId])) {
+            $this->killTaskStack($this->writeTasks[$resourceId]);
+            unset($this->writeTasks[$resourceId]);
         }
     }
 
@@ -136,10 +185,19 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
         $this->removeWriteStream($stream);
     }
 
+    protected function killTaskStack(\SplStack $taskStack)
+    {
+        $taskStack->rewind();
+        while ($taskStack->valid()) {
+            $taskStack->current()->kill();
+            $taskStack->next();
+        }
+    }
+
     /**
      * {@inheritdoc}
      */
-    public function addTimer($interval, callable $callback)
+    function addTimer($interval, callable $callback)
     {
         $timer = new Timer($this, $interval, $callback, false);
 
@@ -151,7 +209,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     /**
      * {@inheritdoc}
      */
-    public function addPeriodicTimer($interval, callable $callback)
+    function addPeriodicTimer($interval, callable $callback)
     {
         $timer = new Timer($this, $interval, $callback, true);
 
@@ -163,7 +221,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     /**
      * {@inheritdoc}
      */
-    public function cancelTimer(TimerInterface $timer)
+    function cancelTimer(TimerInterface $timer)
     {
         $this->timers->cancel($timer);
     }
@@ -171,7 +229,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     /**
      * {@inheritdoc}
      */
-    public function isTimerActive(TimerInterface $timer)
+    function isTimerActive(TimerInterface $timer)
     {
         return $this->timers->contains($timer);
     }
@@ -179,7 +237,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     /**
      * {@inheritdoc}
      */
-    public function nextTick(callable $listener)
+    function nextTick(callable $listener)
     {
         $this->nextTickQueue->add($listener);
     }
@@ -187,7 +245,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     /**
      * {@inheritdoc}
      */
-    public function futureTick(callable $listener)
+    function futureTick(callable $listener)
     {
         $this->futureTickQueue->add($listener);
     }
@@ -230,42 +288,48 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     {
         $timeout = $poll = 0;
         while ($this->running) {
-            // "\n\n".'--== POLL (N:'.$poll++.' Q: '.count($this->queue).')==--' . "\n";
+            $this->debug("\n\n" . '--== POLL (N:' . $poll++ . ' Q: ' . count($this->queue) . ')==--');
 
             yield $this->nextTickQueue->tick();
             yield $this->futureTickQueue->tick();
             yield $this->timers->tick();
 
-            // Next-tick or future-tick queues have pending callbacks ...
-            if (!$this->running || !$this->nextTickQueue->isEmpty() || !$this->futureTickQueue->isEmpty()) {
+            // Queue or Next-tick or future-tick queues have pending callbacks ...
+            if (!$this->queue->isEmpty() || !$this->nextTickQueue->isEmpty() || !$this->futureTickQueue->isEmpty()) {
                 $timeout = 0;
             }
-            // There is a pending timer, only block until it is due ...
-            else if ($scheduledAt = $this->timers->getFirst()) {
-                if (0 > $timeout = $scheduledAt - $this->timers->getTime()) {
-                    $timeout = 0;
-                }
-            }
-            // The only possible event is stream activity, so wait forever ...
             else if ($this->readResources or $this->writeResources) {
-
-                if ($this->queue->isEmpty()) {
-                    $timeout = 1;
-                }
-                else {
-                    $timeout = 0;
-                }
+                $timeout = self::STREAM_SELECT_TIMEOUT;
+            }
+            else if ($scheduledAt = $this->timers->getFirst()) {
+                //$timeout = ($scheduledAt - $this->timers->getTime()) * 1000000;
+                $timeout = 1000000;
+            }
+            else {
+                //($this->debugEnabled === 1) and sleep(2);
+                $this->debug('NOTHING TO DO');
+                $timeout = 1000000;
             }
 
-            //sleep(1);
 
-            $start = microtime(true);
+            //$this->debug($timeout, 3);
+
             yield $this->doPoll($timeout);
 
-            if(count($this->readResources) % 1000 === 0){
-                $end = microtime(true);
-                echo 'Read streams:'.count($this->readResources).' time: '.($end - $start)."\n";
-            }
+//
+//            $this->debug("Read count: ".count($this->readResources) . "\n" .
+//                "Write count: ".count($this->writeResources) . "\n" .
+//                "Queue count: ".count($this->queue) . "\n" .
+//                "Tasks count: ".count($this->tasks) . "\n" .
+//                "Last timeout: ".$this->lastTimeout . "\n" .
+//                "====================", 3);
+//
+//
+//            foreach($this->readResources as $rid => $res){
+//                if(!is_resource($res)){
+//                    $this->debug("Dead resource: $rid", 3);
+//                }
+//            }
         }
     }
 
@@ -281,8 +345,8 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
             return;
         }
 
-        //echo 'Streams Read : ' . count($this->readResources) . '   Write: ' . count($this->writeResources) . "\n";
-        //echo 'Select stream timeout: '; var_dump($timeout);
+        $this->debug('Streams Read : ' . count($this->readResources) . '   Write: ' . count($this->writeResources), 2);
+
         //$r = $this->readResources; $w = $this->writeResources;
         //if(!stream_select($r, $w, $e = [], $timeout)){ return ; }
 
@@ -290,10 +354,11 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 
         foreach ($r as $socket) {
             /** @var \SplStack $taskStack */
-            $taskStack = $this->readTasks[(int) $socket];
+            $taskStack = $this->readTasks[(int)$socket];
 
             $taskStack->rewind();
-            while($taskStack->valid()){
+            while ($taskStack->valid()) {
+                //$this->debug('Schedule Read Task(' . $taskStack->current()->getName() . ')');
                 $this->schedule($taskStack->current());
                 $taskStack->next();
             }
@@ -301,19 +366,20 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 
         foreach ($w as $socket) {
             /** @var \SplStack $taskStack */
-            $taskStack = $this->writeTasks[(int) $socket];
+            $taskStack = $this->writeTasks[(int)$socket];
 
             $taskStack->rewind();
-            while($taskStack->valid()){
+            while ($taskStack->valid()) {
+                //$this->debug('Schedule Write Task(' . $taskStack->current()->getName() . ')');
                 $this->schedule($taskStack->current());
                 $taskStack->next();
             }
         }
 
-        //echo '--== END ==--'."\n\n";
+        $this->debug('--== END ==--' . "\n");
     }
 
-    function selectStreams()
+    function selectStreams($timeout)
     {
         $spr = 1000; // streams per round
         $streamCount = count($this->readResources);
@@ -321,25 +387,41 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
         $offset = 0;
         $w = $this->writeResources;
 
-        $timeout = (int) (100000 / $streamCount + 1);
-        do{
+        // timeout / rounds
+        $this->lastTimeout = (int)($timeout / ceil($streamCount / $spr));
+        do {
             $r = array_slice($this->readResources, $offset, $spr);
-            stream_select($r, $w, $e = [], 0, $timeout);
-            //echo "Offset: $offset  found: ".count($r)."\n";
+            stream_select($r, $w, $e = [], 0, $this->lastTimeout);
+            $this->debug("Offset: $offset Timeout: $this->lastTimeout Found: " . count($r), 2);
 
-            $offset+= $spr;
-        }
-        while(empty($r) and empty($w) and ($offset < $streamCount));
+            $offset += $spr;
+        } while (empty($r) and empty($w) and ($offset < $streamCount));
 
-        return [$r,$w];
+        return [$r, $w];
     }
 
     /**
+     * @param $stream
      * @param callable $callable
      * @return \Generator
      */
-    protected function callableToGenerator(callable $callable)
+    protected function callableToGenerator($stream, callable $callable)
     {
-        yield SystemCall::create((yield new SystemCall($callable)), 'callableToGenerator');
+        $closure = $callable;
+        if (is_array($callable)) {
+            $loop = $this;
+            $closure = function () use ($callable, $stream, $loop) {
+                call_user_func($callable, $stream, $loop);
+            };
+        }
+
+        yield new SystemCall($closure);
+    }
+
+    protected function debug($msg, $type = 1)
+    {
+        if ($this->debugEnabled and ($type >= $this->debugEnabled)) {
+            error_log($msg);
+        }
     }
 }

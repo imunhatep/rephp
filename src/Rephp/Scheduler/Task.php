@@ -30,15 +30,19 @@ class Task
 
     public $name;
 
+    private $killed;
+
     /**
-     * @param            $id
+     * @param $id
      * @param \Generator $coroutine
+     * @param string $name
      */
     public function __construct($id, \Generator $coroutine, $name = '')
     {
         //echo 'NEW task('.$id.'): '.$name."\n";
 
         $this->name = $name;
+        $this->killed = false;
         $this->id = $id;
         $this->coroutine = $coroutine;
     }
@@ -68,6 +72,16 @@ class Task
         return $this->name;
     }
 
+    function kill()
+    {
+        return $this->killed = true;
+    }
+
+    function isKilled()
+    {
+        return $this->killed;
+    }
+
     /**
      * @param mixed $value
      *
@@ -93,6 +107,7 @@ class Task
      */
     public function run()
     {
+
         if ($this->firstRun) {
             $this->firstRun = false;
 
@@ -110,7 +125,7 @@ class Task
      */
     public function isFinished()
     {
-        return !$this->coroutine->valid();
+        return $this->killed or !$this->coroutine->valid();
     }
 
 }

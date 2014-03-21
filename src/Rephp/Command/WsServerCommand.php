@@ -41,7 +41,7 @@ class WsServerCommand extends Command
         }
 
         if (!$host) {
-            $host = 'localhost';
+            $host = '127.0.0.1';
         }
 
         $eventLoop = new SchedulerLoop();
