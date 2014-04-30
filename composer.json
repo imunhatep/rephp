@@ -10,7 +10,7 @@
         { "type": "vcs", "url": "http://github.com/Imunhatep/php-pm" }
     ],
     "require": {
-        "php": ">=5.5",
+        "php": ">=5.5.0",
         "react/react": "~0.4"
     },
     "require-dev": {
