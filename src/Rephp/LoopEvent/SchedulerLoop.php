@@ -12,6 +12,7 @@ use Rephp\Scheduler\Task;
 use Rephp\Socket\Socket;
 use Rephp\Socket\StreamSocket;
 use Rephp\Socket\StreamSocketInterface;
+use Symfony\Component\Validator\Constraints\All;
 
 class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 {
@@ -54,6 +55,11 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 
         $this->lastTimeout = self::STREAM_SELECT_TIMEOUT;
 
+        /**
+         * This part of code shouldn't be, it's here cause for some reason,
+         * eventloop is left with not removed connections
+         * which have been closed, such situation should not be in first.
+         */
         $this->addPeriodicTimer(
             10,
             function () {
@@ -68,20 +74,19 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
                 );
 
 
-                foreach ($this->readResources as $res) {
-                    if (!is_resource($res) or feof($res)) {
-                        $this->removeStream($res);
-                        fclose($res);
+                foreach ($this->readResources as $resource) {
+                    if (!($isResource = is_resource($resource)) or feof($resource)) {
+                        $this->removeStream($resource);
+                        $isResource and fclose($resource);
                     }
                 }
 
-                foreach ($this->writeResources as $res) {
-                    if (!is_resource($res) or feof($res)) {
-                        $this->removeStream($res);
-                        fclose($res);
+                foreach ($this->writeResources as $resource) {
+                    if (!($isResource = is_resource($resource)) or feof($resource)) {
+                        $this->removeStream($resource);
+                        $isResource and fclose($resource);
                     }
                 }
-
             }
         );
     }
@@ -386,6 +391,15 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
         $this->debug('--== END ==--' . "\n");
     }
 
+    /**
+     * Split r streams in parts, cause select_stream starts
+     * lagging when pasted a lot of sockets to select from.
+     *
+     * Such situation possible in case we keep opened connection (ex. websocket server)
+     *
+     * @param $timeout
+     * @return array
+     */
     function selectStreams($timeout)
     {
         $spr = 1000; // streams per round
