@@ -12,7 +12,6 @@ use Rephp\Scheduler\Task;
 use Rephp\Socket\Socket;
 use Rephp\Socket\StreamSocket;
 use Rephp\Socket\StreamSocketInterface;
-use Symfony\Component\Validator\Constraints\All;
 
 class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
 {
