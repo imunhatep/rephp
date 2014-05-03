@@ -9,8 +9,6 @@
 namespace Rephp\Socket;
 
 
-use Rephp\Scheduler\Task;
-
 interface SocketSchedulerInterface
 {
 

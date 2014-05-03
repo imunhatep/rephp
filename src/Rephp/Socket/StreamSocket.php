@@ -44,7 +44,7 @@ class StreamSocket extends Socket implements StreamSocketInterface
         yield new SystemCall(function (Task $task, SocketSchedulerInterface $scheduler) {
             $scheduler->addReader($this, $task);
         }, 'ss::accept');
-        yield new Value(new static(stream_socket_accept($this->socket, 0)));
+        yield new Value(new static(stream_socket_accept($this->socket, 0), $this->loop));
     }
 
     /**

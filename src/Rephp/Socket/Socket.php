@@ -14,7 +14,7 @@ use Rephp\Scheduler\Value;
 /**
  * Socket Implementation based on react connection class
  *
- * @author Artem <Aly> Suahrev
+ * @author Artem <Aly> Suharev
  */
 class Socket implements StreamSocketInterface
 {

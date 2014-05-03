@@ -24,7 +24,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     /**
      * @var array
      */
-    protected $readeTasks;
+    protected $readTasks;
     protected $readResources;
 
     /**
@@ -72,18 +72,17 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
                     3
                 );
 
-
                 foreach ($this->readResources as $resource) {
-                    if (!($isResource = is_resource($resource)) or feof($resource)) {
+                    if (feof($resource)) {
                         $this->removeStream($resource);
-                        $isResource and fclose($resource);
+                        fclose($resource);
                     }
                 }
 
                 foreach ($this->writeResources as $resource) {
-                    if (!($isResource = is_resource($resource)) or feof($resource)) {
+                    if (feof($resource)) {
                         $this->removeStream($resource);
-                        $isResource and fclose($resource);
+                        fclose($resource);
                     }
                 }
             }
@@ -156,9 +155,7 @@ class SchedulerLoop extends Scheduler implements SchedulerLoopInterface
     function removeReadStream($stream)
     {
         $resourceId = (int)$stream;
-
         $this->debug('====== REM RE: ' . (int)$resourceId);
-
         unset($this->readResources[$resourceId]);
         if (isset($this->readTasks[$resourceId])) {
             $this->killTaskStack($this->readTasks[$resourceId]);
