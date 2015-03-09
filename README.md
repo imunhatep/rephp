@@ -44,3 +44,6 @@ For Web application framework [Symfony2](http://symfony.com) will be used.
 ```
 
 For web sockets you will need manually install [Ratchet](http://socketo.me/). I will implement Ratchet a little bit later.
+
+### Article on the subject with howto (on russian):
+[Rephp](http://habrahabr.ru/post/220393/)
