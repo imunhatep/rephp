@@ -49,4 +49,4 @@ For web sockets you will need manually install [Ratchet](http://socketo.me/). I 
 [Rephp](http://habrahabr.ru/post/220393/)
 
 ## License
-The code for php-pm is distributed under the terms of the GPLv3 license.
+The code for RePHP is distributed under the terms of the GPLv3 license.
